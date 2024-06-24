@@ -1,0 +1,5 @@
+instance_type: t2.micro
+image: ami-09040d770ffe2224f
+region: us-east-2 #your region
+security_group: #your security group
+count: 1 #number of instances

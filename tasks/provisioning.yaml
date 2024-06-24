@@ -1,0 +1,62 @@
+---
+- name: Criar instância EC2 e configurar
+  hosts: localhost
+  gather_facts: False
+  vars_files:
+  # - directory where is the file vars/main.yml
+  tasks:
+    - name: Definir o interpretador Python
+      ansible.builtin.set_fact:
+        ansible_python_interpreter: /usr/bin/python3
+
+    - name: Criar a instância EC2
+      amazon.aws.ec2_instance:
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ image }}"
+        region: "{{ region }}"
+        security_groups: ["{{ security_group }}"]
+        count: "{{ count }}"
+      register: ec2_instance
+
+    - name: Depurar o conteúdo de ec2_instance
+      debug:
+        var: ec2_instance
+
+    - name: Adicionar instância ao inventário temporário
+      add_host:
+        name: "{{ item.public_ip }}"
+        groups: EC2Admins
+      with_items: "{{ ec2_instance.instances }}"
+      when: ec2_instance.instances is defined
+
+    - name: Adicionar instância criada ao arquivo hosts
+      lineinfile:
+        dest: "/etc/hosts"
+        regexp: "{{ item.public_ip }}"
+        line: "{{ item.public_ip }}"
+      with_items: "{{ ec2_instance.instances }}"
+      when: ec2_instance.instances is defined
+
+    - name: Esperar até que o SSH esteja pronto
+      wait_for:
+        host: "{{ item.public_ip }}"
+        port: 22
+        state: started
+      with_items: "{{ ec2_instance.instances }}"
+      when: ec2_instance.instances is defined
+
+    - name: Adicionar um nome tag na instância
+      amazon.aws.ec2_tag:
+        resource: "{{ item.id }}"
+        region: "{{ region }}"
+        state: present
+        tags:
+          Name: "Adicionando a máquina criada ao known_hosts"
+      with_items: "{{ ec2_instance.instances }}"
+      when: ec2_instance.instances is defined
+
+    - name: Adicionar a máquina criada ao known_hosts
+      shell: ssh-keyscan -H {{ item.public_ip }} >> ~/.ssh/known_hosts
+      with_items: "{{ ec2_instance.instances }}"
+      when: ec2_instance.instances is defined
+
